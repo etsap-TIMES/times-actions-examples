@@ -1,0 +1,135 @@
+name: xl2timesAndGams
+# This workflow file first uses xl2times to convert the repository xlsx files to DD files
+# Then, GAMS is called using these DD files as input for the TIMES model 
+# After that, the objective function value is extracted from the LST file 
+# If the branch is a feature branch, the main branch is checked-out next and the same steps are done 
+# (xl2times conversion, GAMS execution, objective value extraction)
+# At the end, the objective function values are compared.    
+# Besides the xlsx files, this workflow also requires a scenario.run file located at the root of the repository 
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  CI:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out feature branch of your repository under $GITHUB_WORKSPACE
+      - name: Check out feature branch
+        uses: actions/checkout@v3
+        with:
+          path: model_feature
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+  
+      - name: Clone and Install xl2times
+        run: |
+          git clone https://github.com/etsap-TIMES/xl2times.git
+          cd xl2times
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Check out TIMES model
+        uses: actions/checkout@v3
+        with:
+          repository: etsap-TIMES/TIMES_model
+          path: TIMES_model
+
+      # Install GAMS (GAMSPy Base from pypi including default solvers like CPLEX, see https://pypi.org/project/gamspy-base/)
+      # In case other solvers than the default ones need to be used: replace `pip install gamspy-base` with 
+      # `pip install gamspy`
+      # `gamspy install solver <name>`, e.g. `gamspy install solver highs`
+      - name: Install GAMS
+        run: |
+          pip install gamspy-base
+          echo Creating license file at $HOME/.local/share/GAMS
+          mkdir -p $HOME/.local/share/GAMS
+          echo "$GAMS_LICENSE" > $HOME/.local/share/GAMS/gamslice.txt
+          ls -l $HOME/.local/share/GAMS/
+        env:
+          GAMS_LICENSE: ${{ secrets.GAMS_LICENSE }}
+     
+
+      # Alternative GAMS installation (complete distribution, including all solvers)
+      #- name: Install GAMS
+      #  run: |
+      #    curl https://d37drm4t2jghv5.cloudfront.net/distributions/45.5.0/linux/linux_x64_64_sfx.exe -o linux_x64_64_sfx.exe
+      #    chmod +x linux_x64_64_sfx.exe
+      #    mkdir GAMS
+      #    pushd  GAMS
+      #    ../linux_x64_64_sfx.exe > /dev/null && echo Successfully installed GAMS
+      #    export PATH=$PATH:$(pwd)/gams45.5_linux_x64_64_sfx
+      #    alias gams=$(pwd)/gams45.5_linux_x64_64_sfx/gams
+      #    popd
+      #    echo Creating license file at $HOME/.local/share/GAMS
+      #    mkdir -p $HOME/.local/share/GAMS
+      #    echo "$GAMS_LICENSE" > $HOME/.local/share/GAMS/gamslice.txt
+      #    ls -l $HOME/.local/share/GAMS/
+      #  env:
+      #    GAMS_LICENSE: ${{ secrets.GAMS_LICENSE }}
+
+
+      - name: Run xl2times
+        run: |
+          xl2times model_feature/ --output_dir model_feature/output/ --dd
+      # In case a different solver should be used, add solver=<name> to command line.
+      # In case the regular (full) GAMS distribution is used (see above), replace `$pythonLocation/lib/python3.9/site-packages/gamspy_base/gams` in the gams call with
+      # `$GITHUB_WORKSPACE/GAMS/gams45.5_linux_x64_64_sfx/gams` 
+      - name: Run TIMES model with xl2times output
+        run: |
+          $pythonLocation/lib/python3.9/site-packages/gamspy_base/gams $GITHUB_WORKSPACE/model_feature/scenario.run idir1=$GITHUB_WORKSPACE/TIMES_model/ idir2=$GITHUB_WORKSPACE/model_feature/output/ filecase=4
+          exit_code=$?
+          echo "Feature branch run exit code: $exit_code"
+        id: feature_run
+
+      - name: Extract feature branch Objective Value
+        if: steps.feature_run.outcome == 'success'
+        run: |
+          feature_objective_value=$(grep '^\*\*\*\* OBJECTIVE VALUE' scenario.lst | awk '{print $NF}' | tr -d '[:space:]')
+          echo "Feature branch objective value: $feature_objective_value"
+        id: feature_objective
+
+      - name: Check out main branch
+        uses: actions/checkout@v3
+        if: github.event_name == 'pull_request'
+        with:
+          ref: main
+          path: model_main
+
+      - name: Run xl2times
+        if: github.event_name == 'pull_request'
+        run: |
+          xl2times model_main/ --output_dir model_main/output/ --dd
+          
+      - name: Run TIMES model with xl2times output
+        if: github.event_name == 'pull_request'
+        run: |
+          $pythonLocation/lib/python3.9/site-packages/gamspy_base/gams $GITHUB_WORKSPACE/model_main/scenario.run idir1=$GITHUB_WORKSPACE/TIMES_model/ idir2=$GITHUB_WORKSPACE/model_main/output/ filecase=4
+          exit_code=$?
+          echo "Main branch run exit code: $exit_code"
+        id: main_run
+      
+      - name: Extract main branch Objective Value
+        if: github.event_name == 'pull_request' && steps.main_run.outcome == 'success'
+        run: |
+          main_objective_value=$(grep '^\*\*\*\* OBJECTIVE VALUE' scenario.lst | awk '{print $NF}' | tr -d '[:space:]')
+          echo "main objective value: $main_objective_value"
+        id: main_objective
+
+      - name: Compare Objective Values
+        if: github.event_name == 'pull_request' && steps.feature_objective.outcome == 'success' && steps.main_objective.outcome == 'success'
+        run: |
+          if [ "${{ steps.feature_objective.outputs.feature_objective }}" = "${{ steps.main_objective.outputs.main_objective }}" ]; then
+            echo "Objective values are the same."
+          else
+            echo "Objective values are different."
+          fi
