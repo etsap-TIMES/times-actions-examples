@@ -31,12 +31,9 @@ jobs:
         with:
           python-version: 3.9
   
-      - name: Clone and Install xl2times
+      - name: Install xl2times
         run: |
-          git clone https://github.com/etsap-TIMES/xl2times.git
-          cd xl2times
-          python -m pip install --upgrade pip
-          pip install .
+          pip install xl2times
 
       - name: Check out TIMES model
         uses: actions/checkout@v3
