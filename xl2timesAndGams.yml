@@ -79,11 +79,11 @@ jobs:
         run: |
           xl2times model_feature/ --output_dir model_feature/output/ --dd
       # In case a different solver should be used, add solver=<name> to command line.
-      # In case the regular (full) GAMS distribution is used (see above), replace `$pythonLocation/lib/python3.9/site-packages/gamspy_base/gams` in the gams call with
+      # In case the regular (full) GAMS distribution is used (see above), replace `$pythonLocation/lib/python3.11/site-packages/gamspy_base/gams` in the gams call with
       # `$GITHUB_WORKSPACE/GAMS/gams45.5_linux_x64_64_sfx/gams` 
       - name: Run TIMES model with xl2times output
         run: |
-          $pythonLocation/lib/python3.9/site-packages/gamspy_base/gams $GITHUB_WORKSPACE/model_feature/scenario.run idir1=$GITHUB_WORKSPACE/TIMES_model/ idir2=$GITHUB_WORKSPACE/model_feature/output/ filecase=4
+          $pythonLocation/lib/python3.11/site-packages/gamspy_base/gams $GITHUB_WORKSPACE/model_feature/scenario.run idir1=$GITHUB_WORKSPACE/TIMES_model/ idir2=$GITHUB_WORKSPACE/model_feature/output/ filecase=4
           exit_code=$?
           echo "Feature branch run exit code: $exit_code"
         id: feature_run
@@ -110,7 +110,7 @@ jobs:
       - name: Run TIMES model with xl2times output
         if: github.event_name == 'pull_request'
         run: |
-          $pythonLocation/lib/python3.9/site-packages/gamspy_base/gams $GITHUB_WORKSPACE/model_main/scenario.run idir1=$GITHUB_WORKSPACE/TIMES_model/ idir2=$GITHUB_WORKSPACE/model_main/output/ filecase=4
+          $pythonLocation/lib/python3.11/site-packages/gamspy_base/gams $GITHUB_WORKSPACE/model_main/scenario.run idir1=$GITHUB_WORKSPACE/TIMES_model/ idir2=$GITHUB_WORKSPACE/model_main/output/ filecase=4
           exit_code=$?
           echo "Main branch run exit code: $exit_code"
         id: main_run
